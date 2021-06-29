@@ -1,0 +1,50 @@
+---
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: k8snonrootuser
+  namespace: gatekeeper-system
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sNonRootUser
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8snonrootuser
+        violation[{"msg": msg}] {
+          input.object.kind == "Pod"
+          input.object.spec.securityContext.runAsNonRoot == false
+          msg := sprintf("securityContext.runAsNonRoot is set to %v", [input.object.spec.securityContext.runAsNonRoot])
+        }
+        violation[{"msg": msg}] {
+          input.object.kind == "Pod"
+          input.object.spec.securityContext.runAsUser <= 1
+          msg := sprintf("Current user UID is %v and required UID should be > 1 ", [input.object.spec.securityContext.runAsUser])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sNonRootUser
+metadata:
+  name: non-root-user-all-namespaces
+  namespace: gatekeeper-system
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: nginx
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  securityContext:
+    runAsNonRoot: false
+  containers:
+  - name: nginx
+    image: nginx:latest

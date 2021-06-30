@@ -1,0 +1,66 @@
+---
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: k8snonrootuser
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sNonRootUser
+      validation:
+        # Schema for the `parameters` field
+        openAPIV3Schema:
+          properties:
+            securityContext:
+              type: object
+              properties:
+                runAsUser:
+                  type: integer
+                runAsNonRoot:
+                  type: boolean
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8snonrootuser
+
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Pod"
+          input.review.object.spec.securityContext.runAsNonRoot == input.parameters.securityContext.runAsNonRoot
+          msg := sprintf("securityContext.runAsNonRoot is set to %v", [input.review.object.spec.securityContext.runAsNonRoot]) 
+        }
+
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Pod"
+          input.review.object.spec.securityContext.runAsUser <= input.parameters.securityContext.runAsUser
+          msg := sprintf("Current user UID is %v and require UID should be > 1 ", [input.review.object.spec.securityContext.runAsUser])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sNonRootUser
+metadata:
+  name: non-root-user-all-namespaces
+spec:
+  enforcementAction: deny
+  parameters:
+    securityContext:
+      runAsUser: 1
+      runAsNonRoot: false	
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod","Namespace"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: nginx
+  name: nginx-users-disallowed
+  labels:
+    app: nginx-users
+spec:
+  securityContext:
+    runAsNonRoot: false
+  containers:
+    - name: nginx
+      image: nginx
